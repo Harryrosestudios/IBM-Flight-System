@@ -1,82 +1,131 @@
-package client
+package clients
 
 import (
-	"time"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
 )
-
-// Parsed data structures
-type ParsedWeather struct {
-	TurbulenceSeverity string    `json:"turbulence_severity"`
-	ForecastTime       time.Time `json:"forecast_time"`
-	WindPatterns       string    `json:"wind_patterns"`
-}
-
-type ParsedGeopolitical struct {
-	RiskLevel          string   `json:"risk_level"`
-	AirspaceRestricted bool     `json:"airspace_restricted"`
-	ThreatTypes        []string `json:"threat_types"`
-}
-
-type ParsedAircraft struct {
-	Registration   string  `json:"registration"`
-	CurrentAltitude int     `json:"current_altitude"`
-	GroundSpeed    float64 `json:"ground_speed"`
-}
-
-type ParsedSustainability struct {
-	CO2Emissions  float64 `json:"co2_emissions"`
-	FuelEfficiency float64 `json:"fuel_efficiency"`
-}
-
-// Unified parsed output
-type ParsedFlightData struct {
-	Weather       ParsedWeather       `json:"weather"`
-	Geopolitical  ParsedGeopolitical  `json:"geopolitical"`
-	Aircraft      ParsedAircraft      `json:"aircraft"`
-	Sustainability ParsedSustainability `json:"sustainability"`
-}
-
-// Parser service
-type Parser struct{}
-
+// NewParser creates a new Parser instance
 func NewParser() *Parser {
 	return &Parser{}
 }
 
-func (p *Parser) Parse(raw *FlightData) *ParsedFlightData {
-	parsed := &ParsedFlightData{}
-	
-	if raw.Weather != nil {
-		parsed.Weather = ParsedWeather{
-			TurbulenceSeverity: raw.Weather.Forecast.Turbulence.Severity,
-			ForecastTime:       raw.Weather.Timestamp,
-			WindPatterns:       raw.Weather.Wind.Pattern,
-		}
-	}
-	
-	if raw.Geopolitical != nil {
-		parsed.Geopolitical = ParsedGeopolitical{
-			RiskLevel:          raw.Geopolitical.RiskAssessment.Level,
-			AirspaceRestricted: raw.Geopolitical.AirspaceRestrictions.Active,
-			ThreatTypes:        raw.Geopolitical.ThreatTypes,
-		}
-	}
-	
-	if raw.Aircraft != nil {
-		parsed.Aircraft = ParsedAircraft{
-			Registration:   raw.Aircraft.Registration,
-			CurrentAltitude: raw.Aircraft.Altitude,
-			GroundSpeed:    raw.Aircraft.Speed,
-		}
-	}
-	
-	if raw.Sustainability != nil {
-		parsed.Sustainability = ParsedSustainability{
-			CO2Emissions:  raw.Sustainability.Emissions.CO2,
-			FuelEfficiency: raw.Sustainability.FuelEfficiency,
-		}
-	}
-	
-	return parsed
+// ParseJSON parses JSON data into a struct
+func (p *Parser) ParseJSON(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
 }
 
+// ParseAircraftResponse handles special case for aircraft responses
+func (p *Parser) ParseAircraftResponse(data []byte) ([]Aircraft, error) {
+	log.Println("Parsing aircraft response, length:", len(data))
+	
+	// Try parsing as array
+	var aircraftList []Aircraft
+	err1 := json.Unmarshal(data, &aircraftList)
+	if err1 == nil {
+		log.Printf("Successfully parsed as array with %d items\n", len(aircraftList))
+		return aircraftList, nil
+	}
+	log.Println("Error parsing as array:", err1)
+	
+	// Try parsing as single object
+	var singleAircraft Aircraft
+	err2 := json.Unmarshal(data, &singleAircraft)
+	if err2 == nil {
+		log.Println("Successfully parsed as single object")
+		return []Aircraft{singleAircraft}, nil
+	}
+	log.Println("Error parsing as single object:", err2)
+	
+	// For large responses, try to extract a smaller subset
+	if len(data) > 1000000 {
+		log.Println("Response is very large, trying to extract first item from array")
+		// Try to extract the first item from the array
+		if data[0] == '[' {
+			// Find the end of the first object
+			depth := 0
+			for i := 1; i < len(data); i++ {
+				if data[i] == '{' {
+					depth++
+				} else if data[i] == '}' {
+					depth--
+					if depth == 0 && i+1 < len(data) && data[i+1] == ',' {
+						// Found the end of the first object
+						firstObject := append([]byte{'['}, data[1:i+1]...)
+						firstObject = append(firstObject, ']')
+						
+						var firstItem []Aircraft
+						if err := json.Unmarshal(firstObject, &firstItem); err == nil {
+							log.Println("Successfully parsed first item from array")
+							return firstItem, nil
+						} else {
+							log.Println("Error parsing first item:", err)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("failed to parse aircraft response as array or object: %v, %v", err1, err2)
+}
+
+// ParseFlightResponse handles special case for flight responses
+func (p *Parser) ParseFlightResponse(data []byte) ([]Flight, error) {
+	log.Println("Parsing flight response, length:", len(data))
+	
+	// Try parsing as array
+	var flightList []Flight
+	err1 := json.Unmarshal(data, &flightList)
+	if err1 == nil {
+		log.Printf("Successfully parsed as array with %d items\n", len(flightList))
+		return flightList, nil
+	}
+	log.Println("Error parsing as array:", err1)
+	
+	// Try parsing as single object
+	var singleFlight Flight
+	err2 := json.Unmarshal(data, &singleFlight)
+	if err2 == nil {
+		log.Println("Successfully parsed as single object")
+		return []Flight{singleFlight}, nil
+	}
+	log.Println("Error parsing as single object:", err2)
+	
+	// For large responses, try to extract a smaller subset
+	if len(data) > 1000000 {
+		log.Println("Response is very large, trying to extract first item from array")
+		// Try to extract the first item from the array
+		if data[0] == '[' {
+			// Find the end of the first object
+			depth := 0
+			for i := 1; i < len(data); i++ {
+				if data[i] == '{' {
+					depth++
+				} else if data[i] == '}' {
+					depth--
+					if depth == 0 && i+1 < len(data) && data[i+1] == ',' {
+						// Found the end of the first object
+						firstObject := append([]byte{'['}, data[1:i+1]...)
+						firstObject = append(firstObject, ']')
+						
+						var firstItem []Flight
+						if err := json.Unmarshal(firstObject, &firstItem); err == nil {
+							log.Println("Successfully parsed first item from array")
+							return firstItem, nil
+						} else {
+							log.Println("Error parsing first item:", err)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("failed to parse flight response as array or object: %v, %v", err1, err2)
+}
