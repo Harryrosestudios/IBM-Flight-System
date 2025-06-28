@@ -1,36 +1,60 @@
+import gym
 import numpy as np
 from stable_baselines3 import PPO
 from flightnet.env.airline_env import MultiAircraftEnv
-from flightnet.marl.train import MultiAgentWrapper
 
-model = PPO.load("flightnet/models/flightnet_multiagent")
-print("Model loaded, starting evaluation...")
+class SingleAgentWrapper(gym.Env):
+    def __init__(self):
+        super().__init__()
+        self.base_env = MultiAircraftEnv(num_agents=1)
+        self.observation_space = self.base_env.observation_space
+        self.action_space = self.base_env.action_space
 
-env = MultiAgentWrapper(MultiAircraftEnv(num_agents=3))
-num_episodes = 20
+    def reset(self):
+        obs = self.base_env.reset()
+        self.step_count = 0
+        return obs[0]
 
-all_rewards = []
-all_conflicts = []
-all_lengths = []
+    def step(self, action):
+        action = np.asarray(action, dtype=np.float32).flatten()
+        if action.shape[0] != 3:
+            raise ValueError(f"Action must be of shape (3,), got {action.shape}")
+        action = [float(x) for x in action]
+        obs, rewards, dones, infos = self.base_env.step([action])
+        return obs[0], rewards[0], dones[0], infos[0]
 
-for episode in range(num_episodes):
-    obs = env.reset()
-    done = False
-    ep_reward = 0
-    ep_conflict = 0
-    steps = 0
+    def render(self):
+        return self.base_env.render()
 
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, done, info = env.step(action)
-        ep_reward += reward
-        ep_conflict += int(info.get("conflict", False))
-        steps += 1
+def evaluate_agent(model_path, episodes=5):
+    print(f"\n=== Evaluating Single Agent ===")
+    env = SingleAgentWrapper()
+    model = PPO.load(model_path, env=env)
 
-    all_rewards.append(ep_reward)
-    all_conflicts.append(ep_conflict)
-    all_lengths.append(steps)
+    success_count = 0
+    total_reward = 0
 
-print("Average Reward:", np.mean(all_rewards))
-print("Average Conflicts per Episode:", np.mean(all_conflicts))
-print("Average Episode Length:", np.mean(all_lengths))
+    for ep in range(episodes):
+        obs = env.reset()
+        done = False
+        ep_reward = 0
+        steps = 0
+        final_dist = -1
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, info = env.step(action)
+            env.render()  # <-- Add this line to visualize each step
+            ep_reward += reward
+            steps += 1
+            final_dist = info.get("distance", -1)
+
+        print(f"Episode {ep+1}: Reward={ep_reward:.2f}, Steps={steps}, Final Distance={final_dist:.4f}")
+        total_reward += ep_reward
+        if ep_reward > 0:
+            success_count += 1
+
+    print(f"\nSuccess rate: {success_count}/{episodes}, Avg Reward: {total_reward / episodes:.2f}")
+
+if __name__ == "__main__":
+    evaluate_agent("flightnet/models/single_agent_policy.zip", episodes=10)

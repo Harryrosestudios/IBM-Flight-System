@@ -1,91 +1,171 @@
 import gym
 import numpy as np
 import random
+import requests
 from gym import spaces
+from math import radians, cos, sin
+import os
+from dotenv import load_dotenv
+load_dotenv("project.env")
 
+# === CONFIG ===
+LAT_RANGE = (20.0, 30.0)
+LON_RANGE = (70.0, 85.0)
+ALT_RANGE = (5000, 40000)  # in feet
+
+def normalize(val, min_val, max_val):
+    return (val - min_val) / (max_val - min_val)
+
+def denormalize(norm_val, min_val, max_val):
+    return norm_val * (max_val - min_val) + min_val
+
+def sample_location():
+    return (
+        random.uniform(*LAT_RANGE),
+        random.uniform(*LON_RANGE),
+        random.uniform(*ALT_RANGE)
+    )
+
+def fetch_weather(lat, lon):
+    API_KEY = os.getenv("WEATHER")  
+    url = (
+        f"https://api.openweathermap.org/data/2.5/weather?"
+        f"lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+    )
+    response = requests.get(url)
+    return response.json()
+
+def extract_wind_vector(weather_data):
+    try:
+        speed = weather_data["wind"]["speed"]  # m/s
+        deg = weather_data["wind"]["deg"]      # degrees
+    except KeyError:
+        return 0.0, 0.0
+
+    rad = radians(deg)
+    dx = speed * cos(rad)
+    dy = speed * sin(rad)
+    return dx, dy
+
+
+# === ENVIRONMENT ===
 class MultiAircraftEnv(gym.Env):
-    def __init__(self, num_agents=2, grid_size=10, max_steps=None, random_start=False):
+    def __init__(self, num_agents=2, max_steps=200):
         super().__init__()
         self.num_agents = num_agents
-        self.grid_size = grid_size
-        self.max_steps = max_steps or (2 * grid_size)
-        self.random_start = random_start
-        self.destinations = [np.array([grid_size - 1, grid_size - 1]) for _ in range(num_agents)]
-        self.no_fly_zones = [np.array([4, 4]), np.array([5, 5])]
-        self.weather_zones = [np.array([2, 2]), np.array([7, 7])]
-        self.path_cost = np.random.randint(1, 5, size=(grid_size, grid_size))
-        self.wind_directions = [(0,1), (0,-1), (1,0), (-1,0)]
-        self.positions = [np.array([0, 0]) for _ in range(num_agents)]
-        self.freshness = np.zeros((num_agents, grid_size, grid_size))
+        self.max_steps = max_steps
         self.steps = 0
-        self.observation_space = spaces.Box(low=0, high=grid_size - 1, shape=(6,), dtype=np.float32)
-        self.action_space = spaces.Discrete(4)
+        self.dones = [False] * num_agents
+
+        # Position and destination: [lat, lon, alt]
+        self.positions = []
+        self.destinations = []
+
+        # Wind from weather
+        self.wind_vector = (0.0, 0.0)
+
+        # Observation: 8D normalized vector
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(8,), dtype=np.float32)
+
+        # Continuous movement in lat/lon/alt
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
 
     def seed(self, seed=None):
-        np.random.seed(seed)
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
         random.seed(seed)
+        return [seed]
 
-    def reset(self):
-        if self.random_start:
-            self.positions = [np.array([np.random.randint(0, self.grid_size), np.random.randint(0, self.grid_size)]) for _ in range(self.num_agents)]
-        else:
-            self.positions = [np.array([0, 0]) for _ in range(self.num_agents)]
-        self.freshness = np.zeros((self.num_agents, self.grid_size, self.grid_size))
+    def reset(self, seed=None, options=None):
+        if seed is not None:
+            self.seed(seed)
         self.steps = 0
-        return [self._get_obs(i) for i in range(self.num_agents)]
+        self.dones = [False] * self.num_agents
+        self.positions = []
+        self.destinations = []
 
-    def _get_obs(self, idx):
-        ax, ay = self.positions[idx]
-        dx, dy = self.destinations[idx]
-        freshness = 1.0 - self.freshness[idx][ax, ay] / self.max_steps
-        cost = self.path_cost[ax, ay] / 5.0
-        return np.array([ax, ay, dx, dy, freshness, cost], dtype=np.float32)
+        for _ in range(self.num_agents):
+            pos = sample_location()
+            dest = sample_location()
+            self.positions.append(np.array(pos))
+            self.destinations.append(np.array(dest))
+
+        # Fetch weather at first agent location
+        lat, lon, _ = self.positions[0]
+        weather = fetch_weather(lat, lon)
+        self.wind_vector = extract_wind_vector(weather)
+
+        obs = [self._get_obs(i) for i in range(self.num_agents)]
+        return obs
+
+    def _get_obs(self, i):
+        lat, lon, alt = self.positions[i]
+        dlat, dlon, dalt = self.destinations[i]
+
+        obs = [
+            normalize(lat, *LAT_RANGE),
+            normalize(lon, *LON_RANGE),
+            normalize(alt, *ALT_RANGE),
+            normalize(dlat, *LAT_RANGE),
+            normalize(dlon, *LON_RANGE),
+            normalize(dalt, *ALT_RANGE),
+            0.0,  # Placeholder: freshness
+            0.0   # Placeholder: cost
+        ]
+        # Should return a numpy array
+        return np.array(obs, dtype=np.float32)
 
     def step(self, actions):
-        rewards, dones, infos = [], [], []
         self.steps += 1
+        rewards, infos = [], []
+
         for i in range(self.num_agents):
-            self.freshness[i][self.positions[i][0], self.positions[i][1]] += 1
-            if actions[i] == 0:
-                self.positions[i][0] = max(0, self.positions[i][0] - 1)
-            elif actions[i] == 1:
-                self.positions[i][0] = min(self.grid_size - 1, self.positions[i][0] + 1)
-            elif actions[i] == 2:
-                self.positions[i][1] = max(0, self.positions[i][1] - 1)
-            elif actions[i] == 3:
-                self.positions[i][1] = min(self.grid_size - 1, self.positions[i][1] + 1)
-            dx, dy = random.choice(self.wind_directions)
-            self.positions[i][0] = np.clip(self.positions[i][0] + dx, 0, self.grid_size - 1)
-            self.positions[i][1] = np.clip(self.positions[i][1] + dy, 0, self.grid_size - 1)
-            conflict = any(np.array_equal(self.positions[i], z) for z in self.no_fly_zones)
-            reached = np.array_equal(self.positions[i], self.destinations[i])
-            bad_weather = any(np.array_equal(self.positions[i], w) for w in self.weather_zones)
-            fuel_penalty = self.path_cost[self.positions[i][0], self.positions[i][1]]
-            freshness_penalty = self.freshness[i][self.positions[i][0], self.positions[i][1]]
-            progress_reward = -np.linalg.norm(self.positions[i] - self.destinations[i])
-            reward = progress_reward - fuel_penalty - freshness_penalty
-            done = False
-            if conflict:
-                reward = -100
-                done = True
-            elif reached:
-                reward = 100 - self.steps
-                done = True
+            if self.dones[i]:
+                rewards.append(0.0)
+                infos.append({"done": True})
+                continue
+
+            lat, lon, alt = self.positions[i]
+            dlat, dlon, dalt = self.destinations[i]
+
+            # Calculate prev_dist BEFORE updating position
+            prev_dist = abs(lat - dlat) + abs(lon - dlon) + abs(alt - dalt)
+
+            dx, dy, dz = map(float, actions[i])
+            lat += dx * 0.05  # ~5km north-south
+            lon += dy * 0.05  # ~5km east-west
+            alt += dz * 500   # change altitude ~500 ft
+
+            # Apply wind
+            lat += self.wind_vector[1] * 0.001
+            lon += self.wind_vector[0] * 0.001
+
+            # Clamp to limits
+            lat = np.clip(lat, *LAT_RANGE)
+            lon = np.clip(lon, *LON_RANGE)
+            alt = np.clip(alt, *ALT_RANGE)
+
+            self.positions[i] = np.array([lat, lon, alt])
+
+            dist = abs(lat - dlat) + abs(lon - dlon) + abs(alt - dalt)
+            progress = prev_dist - dist
+            reward = progress * 10 - 0.01  # Encourage progress, small step penalty
+
+            # Check if reached
+            if dist < 0.1:
+                reward += 100
+                self.dones[i] = True
+
+            # Time limit
             elif self.steps >= self.max_steps:
-                reward = -10
-                done = True
-            elif bad_weather:
-                reward -= 20
-            info = {
-                "steps": self.steps,
-                "reached": reached,
-                "conflict": conflict,
-                "fuel": fuel_penalty,
-                "bad_weather": bad_weather,
-                "pos": self.positions[i].copy()
-            }
+                self.dones[i] = True
+
             rewards.append(reward)
-            dones.append(done)
-            infos.append(info)
-        observations = [self._get_obs(i) for i in range(self.num_agents)]
-        return observations, rewards, dones, infos
+            infos.append({"distance": dist, "done": self.dones[i]})
+
+        # rewards[0] -= 0.1 * shaping_penalty  # Try 0.1, 0.05, etc.
+
+        return [self._get_obs(i) for i in range(self.num_agents)], rewards, self.dones, infos
+
+    def render(self, mode='human'):
+        for i, (pos, dest) in enumerate(zip(self.positions, self.destinations)):
+            print(f"Agent {i}: Position={pos}, Destination={dest}")
