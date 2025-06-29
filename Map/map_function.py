@@ -1,8 +1,8 @@
-pip install numpy 
 import numpy as np 
 import pandas as pd 
-pip install folium
-import folium 
+import folium
+from flask import Flask, render_template_string, request
+import requests
 
 #Normalize the input data
 def normalize_airport_data(data):
@@ -43,7 +43,7 @@ def normalize_airport_data(data):
     return df
 
 #Initialize the Map Set up
- def create_base_map(map_style="OpenStreetMap"):
+def create_base_map(map_style="OpenStreetMap"):
     base_map = folium.Map(location=[0,0], zoom_start=2, tiles=map_style, max_zoom = 10, min_zoom =2)
     return base_map
 
@@ -120,6 +120,7 @@ def add_flight_paths(base_map, airport_df, color="red"):
         weight=2,
         opacity=0.7,
         #dash_array="5, 10"
+        #uncomment for dotted line
     ).add_to(base_map)
     
     return base_map
@@ -133,3 +134,55 @@ def build_airport_map(data, style="OpenStreetMap"):
     #add_reset_button(base_map)  # Implement this part depending on Folium/JS support
     folium.LayerControl().add_to(base_map)
     return base_map
+
+# Flask app setup
+app = Flask(__name__)
+
+@app.route('/', methods=['GET'])
+def index():
+    # Default view (can be a form or info page)
+    html = """
+    <html>
+    <head><title>Airport Map Upload</title></head>
+    <body>
+        <h1>Upload Airport Data (JSON)</h1>
+        <form action='/map' method='post' enctype='application/json'>
+            <textarea name='json_data' rows='20' cols='80' placeholder='Paste JSON data here'></textarea><br>
+            <input type='submit' value='Show Map'>
+        </form>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+@app.route('/map', methods=['POST'])
+def map_view():
+    # Accept JSON data from form or direct POST
+    if request.is_json:
+        data = request.get_json()
+    else:
+        # Fallback: get from form textarea
+        json_data = request.form.get('json_data', None)
+        if not json_data:
+            return 'No data provided', 400
+        import json
+        try:
+            data = json.loads(json_data)
+        except Exception as e:
+            return f'Invalid JSON: {e}', 400
+    folium_map = build_airport_map(data)
+    map_html = folium_map._repr_html_()
+    html = f"""
+    <html>
+    <head><title>Airport Map</title></head>
+    <body>
+        <h1>Airport Map (Dynamic)</h1>
+        {map_html}
+        <br><a href='/'>Back</a>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+if __name__ == "__main__":
+    app.run(debug=True)
