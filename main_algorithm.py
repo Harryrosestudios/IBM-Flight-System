@@ -325,7 +325,7 @@ class InternationalFlightOptimizer:
         # Aggregate totals
         total_distance = sum(seg.distance_km for seg in segments)
         total_flight_time = sum(seg.flight_time_hours for seg in segments)
-        total_fuel_cost = sum(seg.fuel_cost for seg in segments)
+        total_fuel_cost = sum(1.4*seg.fuel_cost for seg in segments)
         total_landing_fees = sum(seg.landing_fee for seg in segments)
         total_crew_cost = sum(seg.crew_cost for seg in segments)
         total_maintenance_cost = sum(seg.maintenance_cost for seg in segments)
@@ -521,37 +521,82 @@ def example_usage():
     optimizer = InternationalFlightOptimizer(aircraft, indian_crew_costs)
     
     # Add comprehensive airport network with realistic fuel prices
+
+
+#     @dataclass
+# class Airport:
+#     id: str
+#     name: str
+#     lat: float
+#     lon: float
+#     fuel_price_per_kg: float  # USD per kg of fuel
+#     landing_fee: float        # USD flat fee for landing
+#     country: str
+#     max_fuel_capacity: float  # Maximum fuel that can be loaded (kg)
+
+
+
+
+
+
     airports = [
         # India
-        ("DEL", "Indira Gandhi Intl Delhi", 28.5562, 77.1000, 0.82, 1800, "India"),
-        ("BOM", "Mumbai Chhatrapati Shivaji", 19.0896, 72.8656, 0.84, 1900, "India"),
-        ("BLR", "Bangalore Kempegowda", 13.1986, 77.7066, 0.83, 1600, "India"),
+        ("DEL", "Indira Gandhi Intl Delhi", 28.5562, 77.1000, 1.11, 1800, "India"),
+        ("BOM", "Mumbai Chhatrapati Shivaji", 19.0896, 72.8656, 1.1, 1900, "India"),
+        ("BLR", "Bangalore Kempegowda", 13.1986, 77.7066, 1.1, 1600, "India"),
         
         # Middle East (cheap fuel, good connections)
-        ("DXB", "Dubai International", 25.2532, 55.3657, 0.78, 1800, "UAE"),
-        ("DOH", "Doha Hamad", 25.2731, 51.6081, 0.76, 1600, "Qatar"),
-        ("AUH", "Abu Dhabi", 24.4330, 54.6511, 0.77, 1700, "UAE"),
+        ("DXB", "Dubai International", 25.2532, 55.3657, 0.62, 1800, "UAE"),
+        ("DOH", "Doha Hamad", 25.2731, 51.6081, 0.62, 1600, "Qatar"),
+        ("AUH", "Abu Dhabi", 24.4330, 54.6511, 0.4, 1700, "UAE"),
         
         # Asia
-        ("SIN", "Singapore Changi", 1.3644, 103.9915, 0.88, 2200, "Singapore"),
-        ("KUL", "Kuala Lumpur", 2.7456, 101.7072, 0.79, 1500, "Malaysia"),
-        ("BKK", "Bangkok Suvarnabhumi", 13.6900, 100.7501, 0.81, 1700, "Thailand"),
-        ("ICN", "Seoul Incheon", 37.4602, 126.4407, 0.89, 2400, "South Korea"),
+        ("SIN", "Singapore Changi", 1.3644, 103.9915, 2.712, 2200, "Singapore"),
+        ("KUL", "Kuala Lumpur", 2.7456, 101.7072, 0.48, 1500, "Malaysia"),
+        ("BKK", "Bangkok Suvarnabhumi", 13.6900, 100.7501, 1.34, 1700, "Thailand"),
+        ("ICN", "Seoul Incheon", 37.4602, 126.4407, 1.24, 2400, "South Korea"),
         
         # Europe (expensive fuel/fees)
-        ("LHR", "London Heathrow", 51.4700, -0.4543, 0.92, 3200, "UK"),
-        ("CDG", "Paris Charles de Gaulle", 49.0097, 2.5479, 0.90, 2900, "France"),
-        ("FRA", "Frankfurt am Main", 50.0379, 8.5622, 0.89, 2900, "Germany"),
-        ("AMS", "Amsterdam Schiphol", 52.3105, 4.7683, 0.91, 2800, "Netherlands"),
+        ("LHR", "London Heathrow", 51.4700, -0.4543, 1.79, 3200, "UK"),
+        ("CDG", "Paris Charles de Gaulle", 49.0097, 2.5479, 1.9, 2900, "France"),
+        ("FRA", "Frankfurt am Main", 50.0379, 8.5622, 1.93, 2900, "Germany"),
+        ("AMS", "Amsterdam Schiphol", 52.3105, 4.7683, 2.21, 2800, "Netherlands"),
         
         # North America
-        ("JFK", "New York JFK", 40.6413, -73.7781, 0.85, 2500, "USA"),
-        ("LAX", "Los Angeles", 33.9425, -118.4081, 0.83, 2300, "USA"),
+        ("JFK", "New York JFK", 40.6413, -73.7781, 0.9, 2500, "USA"),
+        ("LAX", "Los Angeles", 33.9425, -118.4081, 0.9, 2300, "USA"),
         ("YYZ", "Toronto Pearson", 43.6777, -79.6248, 0.86, 2200, "Canada"),
         
         # Others
-        ("NRT", "Tokyo Narita", 35.7720, 140.3929, 0.95, 2800, "Japan"),
-        ("SYD", "Sydney Kingsford Smith", -33.9461, 151.1772, 0.90, 2400, "Australia"),
+        ("NRT", "Tokyo Narita", 35.7720, 140.3929, 1.18, 2800, "Japan"),
+        ("SYD", "Sydney Kingsford Smith", -32.9461, 151.1772, 1.00, 2400, "Australia"),
+        ("JNB", "Johannesburg OR Tambo", -26.1333, 28.2421, 1.18, 2000, "South Africa"),
+        ("GRU", "São Paulo Guarulhos", -23.4356, -46.4731, 1.1, 2100, "Brazil"),
+        ("CAI", "Cairo International", 30.1219, 31.4051, 0.38, 1800, "Egypt"),
+        ("IST", "Istanbul Airport", 41.2753, 28.7519, 1.3, 2000, "Turkey"),
+        ("MEX", "Mexico City International", 19.4361, -99.0721, 1.34, 2200, "Mexico"),
+        ("HND", "Tokyo Haneda", 35.5494, 139.7798, 1.18, 2800, "Japan"),
+        ("SVO", "Moscow Sheremetyevo", 55.9726, 37.4146, 0.6, 2500, "Russia"),
+        ("ZRH", "Zurich Airport", 47.4647, 8.5492, 2.12, 2700, "Switzerland"),
+        ("MAD", "Madrid Barajas", 40.4936, -3.5668, 1.80, 2600, "Spain"),
+        ("VIE", "Vienna International", 48.1103, 16.5697, 1.10, 2500, "Austria"),
+        ("CPH", "Copenhagen Kastrup", 55.6170, 12.6569, 2.14, 2400, "Denmark"),
+        ("OSL", "Oslo Gardermoen", 60.1939, 11.1004, 2.08, 2300, "Norway"),
+        ("HEL", "Helsinki Vantaa", 60.3172, 24.9633, 1.93, 2200, "Finland"),
+        ("BRU", "Brussels Airport", 50.9019, 4.4844, 1.85, 2500, "Belgium"),
+        ("DUB", "Dublin Airport", 53.4213, -6.2701, 1.95, 2400, "Ireland"),
+        ("PRG", "Prague Václav Havel", 50.1008, 14.2600, 1.65, 2300, "Czech Republic"),
+        ("WAR", "Warsaw Chopin", 52.1657, 20.9671, 1.55, 2200, "Poland"),
+        ("BUD", "Budapest Ferenc Liszt", 47.4369, 19.2616, 1.50, 2100, "Hungary"),
+        ("ZAG", "Zagreb Airport", 45.7422, 16.0684, 1.45, 2000, "Croatia"),
+        ("SOF", "Sofia Airport", 42.6965, 23.4112, 1.40, 1900, "Bulgaria"),
+        ("LIS", "Lisbon Humberto Delgado", 38.7813, -9.1358, 1.90, 2600, "Portugal"),
+        ("ATH", "Athens Eleftherios Venizelos", 37.9364, 23.9444, 1.80, 2500, "Greece"),
+        ("BUD", "Budapest Ferenc Liszt International Airport", 47.4369, 19.2616, 1.50, 2100, "Hungary"),
+        ("KBP", "Kyiv Boryspil", 50.3450, 30.8942, 1.60, 2300, "Ukraine"),
+        ("LJU", "Ljubljana Jože Pučnik", 46.2236, 14.4575, 1.30, 2000, "Slovenia"),
+        ("TUN", "Tunis Carthage", 36.8519, 10.2272, 1.20, 1800, "Tunisia"),
+        ("BEY", "Beirut Rafic Hariri", 33.8203, 35.4884, 1.10, 1700, "Lebanon")
     ]
     
     for airport_id, name, lat, lon, fuel_price, landing_fee, country in airports:
@@ -561,10 +606,15 @@ def example_usage():
     print("Algorithm will explore ALL possible routes through any intermediate airports\n")
     
     # Test route: Delhi to New York
-    print("=== ROUTE ANALYSIS: Delhi (DEL) to New York (JFK) ===")
-    print("Using Indian airline crew costs throughout journey\n")
+    print(f"=== ROUTE ANALYSIS!!! ===")
     
-    routes = optimizer.compare_routes("DEL", "JFK")
+    print("Please enter the starting airport code:")
+    start = input().strip().upper()
+
+    print("Please enter the destination airport code:")
+    end = input().strip().upper()
+    
+    routes = optimizer.compare_routes(start, end)
     
     # Display cheapest route
     print("--- CHEAPEST ROUTE ---")
