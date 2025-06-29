@@ -143,7 +143,7 @@ def index():
     # Default view (can be a form or info page)
     html = """
     <html>
-    <head><title>Airport Map Upload</title></head>
+    <head><title>Airline Route Visualization</title></head>
     <body>
         <h1>Upload Airport Data (JSON)</h1>
         <form action='/map' method='post' enctype='application/json'>
@@ -162,6 +162,7 @@ def map_view():
         data = request.get_json()
     else:
         # Fallback: get from form textarea
+        # This assumes the form sends JSON data in a textarea named 'json_data'
         json_data = request.form.get('json_data', None)
         if not json_data:
             return 'No data provided', 400

@@ -1,10 +1,20 @@
+pip install numpy 
 import numpy as np 
-import pandas as pd
-import folium
+import pandas as pd 
+pip install folium
+import folium 
 
-#Normalize the input data 
+#Normalize the input data
 def normalize_airport_data(data):
-  
+    """
+    Loads airport data from various sources and normalizes it into a DataFrame.
+
+    Parameters:
+    - data: str (file path) or dict or list
+
+    Returns:
+    - pd.DataFrame
+    """
     # If data is a string -> assume file path
     if isinstance(data, str):
         if data.lower().endswith('.json'):
@@ -15,47 +25,55 @@ def normalize_airport_data(data):
             df = pd.read_excel(data)
         else:
             raise ValueError("Unsupported file type. Supported: .json, .csv, .xlsx, .xls, .xlsm")
+    
     # If data is dict or list -> convert to DataFrame
     elif isinstance(data, dict):
-        # If dict of lists, use as is; else wrap in a list
-        if all(isinstance(v, list) for v in data.values()):
-            df = pd.DataFrame(data)
-        else:
-            df = pd.DataFrame([data])
+        df = pd.DataFrame([data]) if not isinstance(next(iter(data.values())), list) else pd.DataFrame(data)
     elif isinstance(data, list):
         df = pd.DataFrame(data)
     else:
         raise ValueError("Unsupported data type. Must be file path, dict, or list.")
+    
     # Ensure required columns exist
     required_cols = ['airport_id', 'name', 'lat', 'lon', 'fuel_price', 'landing_fee', 'country']
     for col in required_cols:
         if col not in df.columns:
             df[col] = np.nan
+    
     return df
 
-#Initalize map
-def create_base_map(map_style="OpenStreetMap"):
+#Initialize the Map Set up
+ def create_base_map(map_style="OpenStreetMap"):
     base_map = folium.Map(location=[0,0], zoom_start=2, tiles=map_style, max_zoom = 10, min_zoom =2)
     return base_map
-            
+
 #Add Markers
 def add_airport_markers(base_map, airport_df, lat_col="lat", lon_col="lon"):
-    # Ensure lat and lon columns are present
+    
     # Define colors for airport types
     type_colors = {
         "departure": "blue",
         "arrival": "red",
         "hub": "purple",
         "unknown": "blue",
+        
     }
+    
     for _, row in airport_df.iterrows():
-        name = row.get("name", "Unknown")
+        name = row.get("airport_name", "Unknown")
         city = row.get("city", "")
-        airport_type = str(row.get("type", "unknown")).lower()
+        airport_type = str(row.get("type", "unkown")).lower()
+        #location = row.get("location", "")
         country = row.get("country", "")
-        popup_text = f"<b>Airport Name: {name}</b> {airport_type.title()}<br>Location: {country}, ({city})<br>"
+        
+        popup_text = f"""
+        <b>Airport Name: {name}</b> {airport_type.title()}<br>
+        Location:{country}, ({city})<br>
+        """
+        
         # Get color for type, default to blue if not matched
         color = type_colors.get(airport_type, "blue")
+        
         folium.CircleMarker(
             location=[row[lat_col], row[lon_col]],
             radius=6,
@@ -65,9 +83,10 @@ def add_airport_markers(base_map, airport_df, lat_col="lat", lon_col="lon"):
             fill_opacity=0.7,
             popup=folium.Popup(popup_text, max_width=250)
         ).add_to(base_map)
+    
     return base_map
 
-# Draw flight paths 
+#Draw flight paths
 def add_flight_paths(base_map, airport_df, color="red"):
     # Ensure route_order is assigned
     if 'route_order' not in airport_df.columns or airport_df['route_order'].isnull().all():
@@ -87,10 +106,13 @@ def add_flight_paths(base_map, airport_df, color="red"):
             ) if pd.isnull(row['route_order']) else row['route_order'],
             axis=1
         )
+    
     # Sort points in route order
     path_df = airport_df.sort_values(by="route_order")
+    
     # Extract coordinates
     coords = path_df[["lat", "lon"]].values.tolist()
+    
     # Add polyline with dotted style
     folium.PolyLine(
         locations=coords,
@@ -99,18 +121,15 @@ def add_flight_paths(base_map, airport_df, color="red"):
         opacity=0.7,
         #dash_array="5, 10"
     ).add_to(base_map)
+    
     return base_map
 
-#Main function 
+#Main function
 def build_airport_map(data, style="OpenStreetMap"):
-    base_map = create_base_map(map_style=style)
+    base_map = create_base_map(map_style="OpenStreetMap")
     airport_df = normalize_airport_data(data)
     add_airport_markers(base_map, airport_df)
     add_flight_paths(base_map, airport_df)
+    #add_reset_button(base_map)  # Implement this part depending on Folium/JS support
     folium.LayerControl().add_to(base_map)
     return base_map
-
-if __name__ == "__main__":
-    data = r'C:\Users\DEVICES\Downloads\test data for follium map\data3.json'
-    map_obj = build_airport_map(data)
-    map_obj.save("airport_map.html")
