@@ -18,7 +18,7 @@ npm or yarn package manager
 
 Installation
 bash
-git clone https://github.com/yourusername/flightnet.git
+git clone https://github.com/Harryrosestudios/IBM-Flight-System.git
 cd flightnet
 Backend (Go API Clients)
 bash
@@ -39,7 +39,7 @@ npm run dev
 🔑 Environment Setup
 Create a .env or .env.local file in the root of each service with your API keys:
 
-text
+
 # Database (example for PostgreSQL)
 DB_HOST=localhost
 DB_PORT=5432
@@ -143,15 +143,14 @@ Scheduler: Automated daily and interval-based data refresh.
 🆘 Troubleshooting & Support
 Common Issues: Data format mismatches, rate limiting, large dataset imports.
 
-Contact: support@flightnet.ai
+
 
 GitHub Issues: Please submit bug reports and feature requests via GitHub.
 
-📄 License
-MIT License
+
 
 🙏 Acknowledgments
-Aviation Edge, ICAO, RANE, and other data providers.
+Aviation Edge, ICAO, and other data providers.
 
 Next.js, React, Go, Python, and Hugging Face for foundational tech.
 
