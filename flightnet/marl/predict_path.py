@@ -3,11 +3,23 @@ import csv
 from stable_baselines3 import PPO
 from flightnet.env.airline_env import MultiAircraftEnv
 from flightnet.marl.policy import CustomMLPPolicy
-from flightnet.marl.temp import (
+from flightnet.marl.main_algorithm import (
     create_aircraft,
     create_crew_costs_by_region,
     InternationalFlightOptimizer,
+    get_airports,
+    OptimizationMode
 )
+import math
+
+def haversine(lat1, lon1, lat2, lon2):
+    # Returns distance in km between two lat/lon points
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return 2*R*math.asin(math.sqrt(a))
 
 # --- RL Segment Predictor ---
 class SingleAgentWrapperPredict:
@@ -25,10 +37,7 @@ class SingleAgentWrapperPredict:
         self.done = dones[0]
         return self.obs, rewards[0], self.done, infos[0]
 
-    def render(self):
-        self.env.render()
-
-def predict_segment_path(model, start, dest, max_steps=200, save_csv=None, render=False):
+def predict_segment_path(model, start, dest, max_steps=200):
     env = SingleAgentWrapperPredict(start, dest)
     obs = env.obs
     path = [list(start)]
@@ -39,65 +48,82 @@ def predict_segment_path(model, start, dest, max_steps=200, save_csv=None, rende
         pos = env.env.positions[0].tolist()
         path.append(pos)
         rewards.append(reward)
-        if render:
-            env.render()
         if done:
             break
-
-    if save_csv:
-        with open(save_csv, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["step", "lat", "lon", "alt", "reward"])
-            for i, (pos, r) in enumerate(zip(path, [0]+rewards)):
-                writer.writerow([i] + pos + [r])
-        print(f"Segment trajectory saved to {save_csv}")
-
     return path, rewards
+
+def get_no_fly_zones():
+    nfz_input = input("Enter no-fly zones as comma-separated airport codes (e.g. IRN,AFG), or leave blank for none: ").strip().upper()
+    if not nfz_input:
+        return set()
+    return set(code.strip() for code in nfz_input.split(","))
 
 if __name__ == "__main__":
     # --- 1. Setup Optimizer ---
     aircraft = create_aircraft()
-    crew_costs = create_crew_costs_by_region("india")
+    crew_region = input("Enter crew cost region (e.g. india, uk, us): ").strip().lower()
+    crew_costs = create_crew_costs_by_region(crew_region)
     optimizer = InternationalFlightOptimizer(aircraft, crew_costs)
 
-    # Add airports (copy from your temp.py or load as needed)
-    airports = [
-        ("DEL", "Indira Gandhi Intl Delhi", 28.5562, 77.1000, 0.82, 1800, "India"),
-        ("DXB", "Dubai International", 25.2532, 55.3657, 0.78, 1800, "UAE"),
-        ("LHR", "London Heathrow", 51.4700, -0.4543, 0.92, 3200, "UK"),
-        ("JFK", "New York JFK", 40.6413, -73.7781, 0.85, 2500, "USA"),
-        # ... add more as needed ...
-    ]
+    airports = get_airports()  # <--- Use the shared airport list
     for airport_id, name, lat, lon, fuel_price, landing_fee, country in airports:
         optimizer.add_airport(airport_id, name, lat, lon, fuel_price, landing_fee, country)
 
-    # --- 2. Specify no-fly zones and tank capacity if needed ---
-    optimizer.no_fly_zones = [("IRN", "AFG")]  # implement in your optimizer if not present
+    # --- 2. Get best route (with layovers/refueling) ---
+    start_code = input("Please enter the starting airport code: ").strip().upper()
+    dest_code = input("Please enter the destination airport code: ").strip().upper()
+    no_fly_zones = get_no_fly_zones()
 
-    # --- 3. Get best route (with layovers/refueling) ---
-    route = optimizer.optimize_route("DEL", "JFK")  # Add constraints as needed
-    print("Optimized airport sequence:", " → ".join(route.path))
+    # Patch can_fly_direct to avoid no-fly zones
+    orig_can_fly_direct = optimizer.can_fly_direct
+    def patched_can_fly_direct(self, from_id, to_id):
+        if from_id in no_fly_zones or to_id in no_fly_zones:
+            return False
+        return orig_can_fly_direct(from_id, to_id)
+    optimizer.can_fly_direct = patched_can_fly_direct.__get__(optimizer, InternationalFlightOptimizer)
 
-    # --- 4. Load RL model ---
+    routes = optimizer.compare_routes(start_code, dest_code)
+
+    # --- 3. Load RL model ---
     model_path = "flightnet/models/single_agent_policy.zip"
     model = PPO.load(model_path, custom_objects={"policy_class": CustomMLPPolicy})
 
-    # --- 5. Predict and save each segment path ---
-    for i in range(len(route.path) - 1):
-        start_airport = optimizer.airports[route.path[i]]
-        end_airport = optimizer.airports[route.path[i+1]]
-        start = (start_airport.lat, start_airport.lon, 10000)
-        dest = (end_airport.lat, end_airport.lon, 10000)
-        print(f"\nSegment {i+1}: {route.path[i]} → {route.path[i+1]}")
-        seg_csv = f"flightnet/data/predicted_path_{i+1}.csv"
-        path, rewards = predict_segment_path(
-            model,
-            start,
-            dest,
-            max_steps=300,
-            save_csv=seg_csv,
-            render=True
-        )
-        print(f"Segment {i+1} path length: {len(path)}")
+    print("Segment Details:")
+    for mode in ["cheapest", "fastest"]:
+        route = routes[mode]
+        if "error" in route:
+            print(f"\n--- {mode.upper()} ROUTE ---")
+            print(route["error"])
+            continue
 
-    print("\nAll segments predicted and saved.")
+        overview = route['route_overview']
+        costs = route['detailed_cost_breakdown']
+
+        print(f"\n--- {mode.upper()} ROUTE ---")
+        print(f"Route: {overview['route_path']}")
+        print(f"Total Cost: ${overview['total_cost_usd']:,.2f}")
+        print(f"Flight Time: {overview['total_flight_time_hours']:.1f} hours")
+        print(f"Distance: {overview['total_distance_km']:,.0f} km")
+        print(f"Stops: {overview['number_of_stops']}")
+        print(f"Crew Rate: {overview['crew_cost_structure']}")
+
+        print(f"\nCost Breakdown:")
+        print(f"  Fuel: ${costs['fuel_cost_usd']:,.2f}")
+        print(f"  Landing Fees: ${costs['landing_fees_usd']:,.2f}")
+        print(f"  Crew: ${costs['crew_cost_usd']:,.2f}")
+        print(f"  Maintenance: ${costs['maintenance_cost_usd']:,.2f}")
+        print(f"  Other Costs: ${costs['depreciation_cost_usd'] + costs['insurance_cost_usd'] + costs['navigation_fees_usd'] + costs['ground_handling_cost_usd']:,.2f}")
+
+        print(f"\nSegment Details:")
+        for seg in route['flight_segments']:
+            from_code = seg['from']['code']
+            to_code = seg['to']['code']
+            start = (optimizer.airports[from_code].lat, optimizer.airports[from_code].lon, 10000)
+            dest = (optimizer.airports[to_code].lat, optimizer.airports[to_code].lon, 10000)
+            seg_distance = seg['distance_km']
+            path, rewards = predict_segment_path(model, start, dest, max_steps=300)
+            refuel_info = " (REFUEL)" if seg['refuel_info']['requires_refuel'] else ""
+            nfz_violation = from_code in no_fly_zones or to_code in no_fly_zones
+            violation_note = " [NO-FLY ZONE VIOLATION]" if nfz_violation else ""
+            print(f"  {from_code} → {to_code}: {seg_distance:,.0f}km, steps: {len(path)}, RL reward: {sum(rewards):.1f}${refuel_info}{violation_note}")
+        print("\n" + "="*60)
