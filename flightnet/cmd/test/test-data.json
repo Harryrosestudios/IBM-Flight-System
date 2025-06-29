@@ -1,0 +1,93 @@
+{
+  "aircraft": [
+    {
+      "airplaneId": "",
+      "numberRegistration": "",
+      "productionLine": "",
+      "airplaneIataType": "",
+      "planeModel": "",
+      "modelCode": "",
+      "hexIcaoAirplane": "",
+      "codeIataPlaneShort": "",
+      "codeIataPlaneLong": "",
+      "constructionNumber": "",
+      "rolloutDate": "",
+      "firstFlight": "",
+      "deliveryDate": "",
+      "registrationDate": "",
+      "codeIataAirline": "",
+      "enginesCount": "",
+      "enginesType": "",
+      "planeAge": "",
+      "planeStatus": ""
+    }
+  ],
+  "flights": [
+    {
+      "geography": {
+        "latitude": 0,
+        "longitude": 0,
+        "altitude": 0
+      },
+      "departure": {
+        "iataCode": "",
+        "icaoCode": "",
+        "scheduledTime": ""
+      },
+      "arrival": {
+        "iataCode": "",
+        "icaoCode": "",
+        "scheduledTime": ""
+      },
+      "aircraft": {
+        "regNumber": "",
+        "icaoCode": ""
+      },
+      "flight": {
+        "number": "",
+        "iataNumber": "",
+        "icaoNumber": ""
+      },
+      "airline": {
+        "name": "",
+        "iataCode": "",
+        "icaoCode": ""
+      },
+      "status": ""
+    }
+  ],
+  "futureFlights": [
+    {
+      "geography": {
+        "latitude": 0,
+        "longitude": 0,
+        "altitude": 0
+      },
+      "departure": {
+        "iataCode": "",
+        "icaoCode": "",
+        "scheduledTime": ""
+      },
+      "arrival": {
+        "iataCode": "",
+        "icaoCode": "",
+        "scheduledTime": ""
+      },
+      "aircraft": {
+        "regNumber": "",
+        "icaoCode": ""
+      },
+      "flight": {
+        "number": "",
+        "iataNumber": "",
+        "icaoNumber": ""
+      },
+      "airline": {
+        "name": "",
+        "iataCode": "",
+        "icaoCode": ""
+      },
+      "status": ""
+    }
+  ]
+}
